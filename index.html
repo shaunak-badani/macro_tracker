@@ -37,34 +37,20 @@
         const { useState, useEffect } = React;
 
         // STARTER FOOD DATABASE - Edit this to change default foods for all users
+        // Needs edits - I'm too tired right now.
         const STARTER_FOODS = [
-            { name: "Fage Yogurt", calories: 80, protein: 16, fat: 0, carb: 5, dietryFiber: 0, saturatedFat: 0 },
-            { name: "Cheese Office", calories: 80, protein: 6, fat: 6, carb: 1, dietryFiber: 0, saturatedFat: 3 },
-            { name: "Bread", calories: 40, protein: 4, fat: 1.5, carb: 9, dietryFiber: 8, saturatedFat: 0 },
-            { name: "Guacamole", calories: 90, protein: 1, fat: 8, carb: 6, dietryFiber: 4, saturatedFat: 1 },
-            { name: "Tortilla", calories: 60, protein: 5, fat: 3.5, carb: 20, dietryFiber: 18, saturatedFat: 1.5 },
-            { name: "Paneer", calories: 90, protein: 7, fat: 7, carb: 1, dietryFiber: 0, saturatedFat: 4.5 },
-            { name: "Veggies", calories: 45, protein: 1, fat: 2.5, carb: 5, dietryFiber: 2, saturatedFat: 0 },
-            { name: "Broccli", calories: 25, protein: 0, fat: 0, carb: 5, dietryFiber: 3, saturatedFat: 0 },
-            { name: "Strawberry Pouc", calories: 40, protein: 0, fat: 0, carb: 9, dietryFiber: 2, saturatedFat: 0 },
-            { name: "Milk 1%", calories: 120, protein: 10, fat: 2.5, carb: 15, dietryFiber: 0, saturatedFat: 1.5 },
-            { name: "Milk 2%", calories: 140, protein: 10, fat: 5, carb: 14, dietryFiber: 9, saturatedFat: 3 },
-            { name: "Salsa", calories: 10, protein: 0, fat: 0, carb: 2, dietryFiber: 0, saturatedFat: 0 },
-            { name: "Biscuit", calories: 230, protein: 3, fat: 9, carb: 36, dietryFiber: 3, saturatedFat: 1.5 },
-            { name: "Bagel Plain", calories: 110, protein: 15, fat: 3, carb: 35, dietryFiber: 30, saturatedFat: 0 },
-            { name: "Bagel Everything", calories: 140, protein: 15, fat: 5, carb: 36, dietryFiber: 30, saturatedFat: 0.5 },
-            { name: "Cheese Home", calories: 60, protein: 7, fat: 3, carb: 0, dietryFiber: 0, saturatedFat: 2 },
-            { name: "Dal", calories: 350, protein: 25, fat: 1, carb: 60, dietryFiber: 25, saturatedFat: 0 },
-            { name: "cream cheese", calories: 80, protein: 0, fat: 7, carb: 2, dietryFiber: 0, saturatedFat: 6 },
-            { name: "Protein Bar", calories: 180, protein: 21, fat: 7, carb: 23, dietryFiber: 12, saturatedFat: 2.5 },
-            { name: "Sweetgreen", calories: 220, protein: 15, fat: 0, carb: 0, dietryFiber: 0, saturatedFat: 0 },
-            { name: "Pasta", calories: 190, protein: 10, fat: 1, carb: 38, dietryFiber: 5, saturatedFat: 0 },
-            { name: "pasta sauce", calories: 60, protein: 2, fat: 1, carb: 11, dietryFiber: 2, saturatedFat: 0 },
-            { name: "Marie Biscuits", calories: 150, protein: 3, fat: 4, carb: 25, dietryFiber: 9, saturatedFat: 2 },
-            { name: "Tofu", calories: 70, protein: 7, fat: 4, carb: 2, dietryFiber: 1, saturatedFat: 0.5 },
-            { name: "spinach", calories: 20, protein: 3, fat: 0, carb: 3, dietryFiber: 2, saturatedFat: 0 },
-            { name: "rice", calories: 160, protein: 4, fat: 0.5, carb: 36, dietryFiber: 0, saturatedFat: 0 },
-            { name: "spiring roll", calories: 170, protein: 5, fat: 5, carb: 26, dietryFiber: 3, saturatedFat: 0.5 }
+            // 112g potatoes + 1 small soft taco tortilla (60 kcal) + dhaniya chutney
+            { name: "Aloo wrap with tortilla and dhaniya chutney", calories: 175, protein: 3.5, fat: 2.5, carb: 34, dietryFiber: 2.5, saturatedFat: 0.7 },
+            // ~150g cooked paneer in tomato gravy + oil for tempering, + 4 roti (100 kcal/roti, per label)
+            { name: "Cooked bowl of paneer + 4 roti", calories: 920, protein: 39, fat: 52, carb: 77, dietryFiber: 12, saturatedFat: 23 },
+            // ~300g cooked rajma with light tempering + 4 roti (100 kcal/roti)
+            { name: "1 bowl of cooked rajma + 4 roti", calories: 830, protein: 38, fat: 14, carb: 142, dietryFiber: 31, saturatedFat: 3 },
+            // ~250-300g cooked chole with masala + 4 roti (100 kcal/roti)
+            { name: "1 bowl of cooked chole + 4 roti", calories: 930, protein: 34, fat: 28, carb: 143, dietryFiber: 31, saturatedFat: 4 },
+            // 240ml 1% milk + 1 scoop (24g protein) ON Gold Standard double rich chocolate + 1 tbsp cocoa powder
+            { name: "Protein shake", calories: 242, protein: 33, fat: 4.2, carb: 18, dietryFiber: 1.5, saturatedFat: 1.5 },
+            // Pure Protein chocolate bar (label values)
+            { name: "Protein Bar", calories: 200, protein: 20, fat: 6, carb: 17, dietryFiber: 1, saturatedFat: 3.5 },
         ];
 
         // Icons as inline SVG components
