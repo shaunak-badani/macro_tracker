@@ -54,8 +54,8 @@
         ];
 
         // Icons as inline SVG components
-        const Plus = () => (
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        const Plus = ({ size = 24 }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
             </svg>
@@ -128,6 +128,39 @@
             </svg>
         );
 
+        // Computes the macro contribution of a single recipe ingredient, scaled from
+        // the ingredient food's macros (defined per its servingSize, default 100g)
+        // to the grams actually used.
+        const getIngredientContribution = (ingredient, foodDatabase) => {
+            const empty = { calories: 0, protein: 0, fat: 0, carb: 0, dietryFiber: 0, saturatedFat: 0 };
+            const food = foodDatabase.find(f => f.id === ingredient.foodId);
+            if (!food) return empty;
+            const baseSize = food.servingSize || 100;
+            const ratio = (parseFloat(ingredient.grams) || 0) / baseSize;
+            return {
+                calories: food.calories * ratio,
+                protein: food.protein * ratio,
+                fat: food.fat * ratio,
+                carb: food.carb * ratio,
+                dietryFiber: food.dietryFiber * ratio,
+                saturatedFat: food.saturatedFat * ratio
+            };
+        };
+
+        const sumIngredientMacros = (ingredients, foodDatabase) => {
+            const totals = { calories: 0, protein: 0, fat: 0, carb: 0, dietryFiber: 0, saturatedFat: 0 };
+            (ingredients || []).forEach(ing => {
+                const c = getIngredientContribution(ing, foodDatabase);
+                totals.calories += c.calories;
+                totals.protein += c.protein;
+                totals.fat += c.fat;
+                totals.carb += c.carb;
+                totals.dietryFiber += c.dietryFiber;
+                totals.saturatedFat += c.saturatedFat;
+            });
+            return totals;
+        };
+
         function MacroTracker() {
             const [foodDatabase, setFoodDatabase] = useState([]);
             const [allSessions, setAllSessions] = useState([]);
@@ -147,8 +180,12 @@
                 fat: '',
                 carb: '',
                 dietryFiber: '',
-                saturatedFat: ''
+                saturatedFat: '',
+                servingSize: '100'
             });
+
+            const [foodMode, setFoodMode] = useState('simple'); // 'simple' | 'recipe'
+            const [newRecipe, setNewRecipe] = useState({ name: '', ingredients: [] });
 
             const [newEntry, setNewEntry] = useState({
                 foodId: '',
@@ -364,7 +401,8 @@
                     fat: parseFloat(newFood.fat) || 0,
                     carb: parseFloat(newFood.carb) || 0,
                     dietryFiber: parseFloat(newFood.dietryFiber) || 0,
-                    saturatedFat: parseFloat(newFood.saturatedFat) || 0
+                    saturatedFat: parseFloat(newFood.saturatedFat) || 0,
+                    servingSize: parseFloat(newFood.servingSize) || 100
                 };
 
                 const updatedDb = [...foodDatabase, food];
@@ -378,16 +416,123 @@
                     fat: '',
                     carb: '',
                     dietryFiber: '',
-                    saturatedFat: ''
+                    saturatedFat: '',
+                    servingSize: '100'
                 });
                 setShowAddFood(false);
+            };
+
+            const addRecipeIngredientRow = () => {
+                setNewRecipe(prev => ({
+                    ...prev,
+                    ingredients: [...prev.ingredients, { id: `ing-${Date.now()}-${Math.random()}`, foodId: '', grams: '' }]
+                }));
+            };
+
+            const updateRecipeIngredient = (id, field, value) => {
+                setNewRecipe(prev => ({
+                    ...prev,
+                    ingredients: prev.ingredients.map(ing => ing.id === id ? { ...ing, [field]: value } : ing)
+                }));
+            };
+
+            const removeRecipeIngredient = (id) => {
+                setNewRecipe(prev => ({
+                    ...prev,
+                    ingredients: prev.ingredients.filter(ing => ing.id !== id)
+                }));
+            };
+
+            const saveRecipe = () => {
+                if (!newRecipe.name) return;
+                const validIngredients = newRecipe.ingredients.filter(ing => ing.foodId && parseFloat(ing.grams) > 0);
+                if (validIngredients.length === 0) return;
+
+                const macros = sumIngredientMacros(validIngredients, foodDatabase);
+                const totalGrams = validIngredients.reduce((sum, ing) => sum + (parseFloat(ing.grams) || 0), 0);
+
+                const recipeFood = {
+                    id: Date.now().toString(),
+                    name: newRecipe.name,
+                    calories: macros.calories,
+                    protein: macros.protein,
+                    fat: macros.fat,
+                    carb: macros.carb,
+                    dietryFiber: macros.dietryFiber,
+                    saturatedFat: macros.saturatedFat,
+                    isComposite: true,
+                    servingSize: totalGrams,
+                    ingredients: validIngredients.map(ing => ({ id: ing.id, foodId: ing.foodId, grams: parseFloat(ing.grams) || 0 }))
+                };
+
+                const updatedDb = [...foodDatabase, recipeFood];
+                setFoodDatabase(updatedDb);
+                saveDatabase(updatedDb);
+
+                setNewRecipe({ name: '', ingredients: [] });
+                setShowAddFood(false);
+                setFoodMode('simple');
+            };
+
+            const startEditFood = (food) => {
+                if (food.isComposite) {
+                    setEditingFood({
+                        ...food,
+                        ingredients: (food.ingredients || []).map((ing, idx) => ({
+                            id: ing.id || `ing-${idx}`,
+                            foodId: ing.foodId,
+                            grams: ing.grams.toString()
+                        }))
+                    });
+                } else {
+                    setEditingFood(food);
+                }
+            };
+
+            const addEditIngredientRow = () => {
+                setEditingFood(prev => ({
+                    ...prev,
+                    ingredients: [...(prev.ingredients || []), { id: `ing-${Date.now()}-${Math.random()}`, foodId: '', grams: '' }]
+                }));
+            };
+
+            const updateEditIngredient = (id, field, value) => {
+                setEditingFood(prev => ({
+                    ...prev,
+                    ingredients: prev.ingredients.map(ing => ing.id === id ? { ...ing, [field]: value } : ing)
+                }));
+            };
+
+            const removeEditIngredient = (id) => {
+                setEditingFood(prev => ({
+                    ...prev,
+                    ingredients: prev.ingredients.filter(ing => ing.id !== id)
+                }));
             };
 
             const updateFood = () => {
                 if (!editingFood) return;
 
-                const updatedDb = foodDatabase.map(f => 
-                    f.id === editingFood.id ? editingFood : f
+                let foodToSave = editingFood;
+                if (editingFood.isComposite) {
+                    const validIngredients = (editingFood.ingredients || []).filter(ing => ing.foodId && parseFloat(ing.grams) > 0);
+                    const macros = sumIngredientMacros(validIngredients, foodDatabase);
+                    const totalGrams = validIngredients.reduce((sum, ing) => sum + (parseFloat(ing.grams) || 0), 0);
+                    foodToSave = {
+                        ...editingFood,
+                        calories: macros.calories,
+                        protein: macros.protein,
+                        fat: macros.fat,
+                        carb: macros.carb,
+                        dietryFiber: macros.dietryFiber,
+                        saturatedFat: macros.saturatedFat,
+                        servingSize: totalGrams,
+                        ingredients: validIngredients.map(ing => ({ id: ing.id, foodId: ing.foodId, grams: parseFloat(ing.grams) || 0 }))
+                    };
+                }
+
+                const updatedDb = foodDatabase.map(f =>
+                    f.id === foodToSave.id ? foodToSave : f
                 );
                 setFoodDatabase(updatedDb);
                 saveDatabase(updatedDb);
@@ -662,7 +807,7 @@
                                                 >
                                                     <option value="">Choose a food...</option>
                                                     {foodDatabase.map(food => (
-                                                        <option key={food.id} value={food.id}>{food.name}</option>
+                                                        <option key={food.id} value={food.id}>{food.isComposite ? '🧩 ' : ''}{food.name}</option>
                                                     ))}
                                                 </select>
                                             </div>
@@ -828,6 +973,23 @@
 
                                 {showAddFood && (
                                     <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                                        <div className="flex gap-2 mb-4">
+                                            <button
+                                                onClick={() => setFoodMode('simple')}
+                                                className={`flex-1 py-2 rounded-lg font-semibold text-sm transition-colors ${foodMode === 'simple' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                            >
+                                                Simple Food
+                                            </button>
+                                            <button
+                                                onClick={() => setFoodMode('recipe')}
+                                                className={`flex-1 py-2 rounded-lg font-semibold text-sm transition-colors ${foodMode === 'recipe' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                            >
+                                                🧩 Recipe / Combo
+                                            </button>
+                                        </div>
+
+                                        {foodMode === 'simple' ? (
+                                        <>
                                         <h3 className="text-lg font-bold text-gray-800 mb-4">Add New Food</h3>
                                         <div className="space-y-4">
                                             <input
@@ -880,7 +1042,15 @@
                                                     onChange={(e) => setNewFood({ ...newFood, saturatedFat: e.target.value })}
                                                     className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
                                                 />
+                                                <input
+                                                    type="number"
+                                                    placeholder="Serving Size (g)"
+                                                    value={newFood.servingSize}
+                                                    onChange={(e) => setNewFood({ ...newFood, servingSize: e.target.value })}
+                                                    className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+                                                />
                                             </div>
+                                            <p className="text-xs text-gray-500">The macros above are for this serving size. This is the basis used if this food is later added as a recipe ingredient (defaults to 100g).</p>
                                             <div className="flex gap-2">
                                                 <button
                                                     onClick={addFood}
@@ -898,6 +1068,98 @@
                                                 </button>
                                             </div>
                                         </div>
+                                        </>
+                                        ) : (
+                                        <>
+                                        <h3 className="text-lg font-bold text-gray-800 mb-4">Create Recipe / Combo</h3>
+                                        <div className="space-y-4">
+                                            <input
+                                                type="text"
+                                                placeholder="Recipe Name (e.g. Turkey Sandwich)"
+                                                value={newRecipe.name}
+                                                onChange={(e) => setNewRecipe({ ...newRecipe, name: e.target.value })}
+                                                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+                                            />
+
+                                            <div className="space-y-3">
+                                                {newRecipe.ingredients.map(ing => (
+                                                    <div key={ing.id} className="flex gap-2 items-center">
+                                                        <select
+                                                            value={ing.foodId}
+                                                            onChange={(e) => updateRecipeIngredient(ing.id, 'foodId', e.target.value)}
+                                                            className="flex-1 p-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
+                                                        >
+                                                            <option value="">Choose ingredient...</option>
+                                                            {foodDatabase.map(food => (
+                                                                <option key={food.id} value={food.id}>{food.isComposite ? '🧩 ' : ''}{food.name}</option>
+                                                            ))}
+                                                        </select>
+                                                        <input
+                                                            type="number"
+                                                            placeholder="grams"
+                                                            value={ing.grams}
+                                                            onChange={(e) => updateRecipeIngredient(ing.id, 'grams', e.target.value)}
+                                                            className="w-24 p-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
+                                                        />
+                                                        <span className="text-sm text-gray-500">g</span>
+                                                        <button
+                                                            onClick={() => removeRecipeIngredient(ing.id)}
+                                                            className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            <button
+                                                onClick={addRecipeIngredientRow}
+                                                className="w-full border-2 border-dashed border-gray-300 text-gray-600 py-2 rounded-lg font-semibold hover:bg-gray-50 transition-colors text-sm flex items-center justify-center gap-2"
+                                            >
+                                                <Plus size={16} />
+                                                Add Ingredient
+                                            </button>
+
+                                            {newRecipe.ingredients.length > 0 && (() => {
+                                                const validIngredients = newRecipe.ingredients.filter(ing => ing.foodId && parseFloat(ing.grams) > 0);
+                                                const macros = sumIngredientMacros(validIngredients, foodDatabase);
+                                                const totalGrams = validIngredients.reduce((sum, ing) => sum + (parseFloat(ing.grams) || 0), 0);
+                                                return (
+                                                    <div className="bg-gray-50 rounded-xl p-4">
+                                                        <div className="text-sm font-semibold text-gray-700 mb-2">
+                                                            Recipe Totals ({totalGrams}g)
+                                                        </div>
+                                                        <div className="grid grid-cols-3 gap-2 text-sm">
+                                                            <div><span className="text-gray-500">Cal:</span> <span className="font-bold">{macros.calories.toFixed(0)}</span></div>
+                                                            <div><span className="text-gray-500">Protein:</span> <span className="font-bold">{macros.protein.toFixed(1)}g</span></div>
+                                                            <div><span className="text-gray-500">Fat:</span> <span className="font-bold">{macros.fat.toFixed(1)}g</span></div>
+                                                            <div><span className="text-gray-500">Carbs:</span> <span className="font-bold">{macros.carb.toFixed(1)}g</span></div>
+                                                            <div><span className="text-gray-500">Fiber:</span> <span className="font-bold">{macros.dietryFiber.toFixed(1)}g</span></div>
+                                                            <div><span className="text-gray-500">Sat Fat:</span> <span className="font-bold">{macros.saturatedFat.toFixed(1)}g</span></div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={saveRecipe}
+                                                    className="flex-1 bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                                                >
+                                                    <Check />
+                                                    Save Recipe
+                                                </button>
+                                                <button
+                                                    onClick={() => { setShowAddFood(false); setNewRecipe({ name: '', ingredients: [] }); }}
+                                                    className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+                                                >
+                                                    <X />
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                        </>
+                                        )}
                                     </div>
                                 )}
 
@@ -910,6 +1172,69 @@
                                             {foodDatabase.map(food => (
                                                 <div key={food.id}>
                                                     {editingFood?.id === food.id ? (
+                                                        editingFood.isComposite ? (
+                                                        <div className="p-4 bg-blue-50 rounded-xl space-y-3">
+                                                            <input
+                                                                type="text"
+                                                                value={editingFood.name}
+                                                                onChange={(e) => setEditingFood({ ...editingFood, name: e.target.value })}
+                                                                className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                                            />
+                                                            <div className="space-y-2">
+                                                                {(editingFood.ingredients || []).map(ing => (
+                                                                    <div key={ing.id} className="flex gap-2 items-center">
+                                                                        <select
+                                                                            value={ing.foodId}
+                                                                            onChange={(e) => updateEditIngredient(ing.id, 'foodId', e.target.value)}
+                                                                            className="flex-1 p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
+                                                                        >
+                                                                            <option value="">Choose ingredient...</option>
+                                                                            {foodDatabase.filter(f => f.id !== editingFood.id).map(f => (
+                                                                                <option key={f.id} value={f.id}>{f.isComposite ? '🧩 ' : ''}{f.name}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        <input
+                                                                            type="number"
+                                                                            placeholder="grams"
+                                                                            value={ing.grams}
+                                                                            onChange={(e) => updateEditIngredient(ing.id, 'grams', e.target.value)}
+                                                                            className="w-20 p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
+                                                                        />
+                                                                        <span className="text-xs text-gray-500">g</span>
+                                                                        <button
+                                                                            onClick={() => removeEditIngredient(ing.id)}
+                                                                            className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                                                        >
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <button
+                                                                onClick={addEditIngredientRow}
+                                                                className="w-full border-2 border-dashed border-blue-300 text-blue-700 py-2 rounded-lg font-semibold hover:bg-blue-100 transition-colors text-sm flex items-center justify-center gap-2"
+                                                            >
+                                                                <Plus size={16} />
+                                                                Add Ingredient
+                                                            </button>
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={updateFood}
+                                                                    className="flex-1 bg-green-600 text-white py-2 rounded-lg font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-1"
+                                                                >
+                                                                    <Check size={16} />
+                                                                    Save
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setEditingFood(null)}
+                                                                    className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg font-semibold hover:bg-gray-300 transition-colors flex items-center justify-center gap-1"
+                                                                >
+                                                                    <X size={16} />
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                        ) : (
                                                         <div className="p-4 bg-blue-50 rounded-xl space-y-3">
                                                             <input
                                                                 type="text"
@@ -960,6 +1285,13 @@
                                                                     placeholder="Sat Fat"
                                                                     className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
                                                                 />
+                                                                <input
+                                                                    type="number"
+                                                                    value={editingFood.servingSize !== undefined ? editingFood.servingSize : 100}
+                                                                    onChange={(e) => setEditingFood({ ...editingFood, servingSize: e.target.value })}
+                                                                    placeholder="Serving (g)"
+                                                                    className="w-full p-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                                                                />
                                                             </div>
                                                             <div className="flex gap-2">
                                                                 <button
@@ -978,22 +1310,35 @@
                                                                 </button>
                                                             </div>
                                                         </div>
+                                                        )
                                                     ) : (
                                                         <div className="flex items-start justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
                                                             <div className="flex-1">
-                                                                <div className="font-semibold text-gray-800 mb-1">{food.name}</div>
+                                                                <div className="font-semibold text-gray-800 mb-1">
+                                                                    {food.isComposite && <span title="Recipe / Combo">🧩 </span>}
+                                                                    {food.name}
+                                                                </div>
                                                                 <div className="text-sm text-gray-600 flex flex-wrap gap-x-3 gap-y-1">
-                                                                    <span>{food.calories} cal</span>
+                                                                    <span>{food.calories.toFixed ? food.calories.toFixed(0) : food.calories} cal</span>
                                                                     <span>P: {food.protein}g</span>
                                                                     <span>F: {food.fat}g</span>
                                                                     <span>C: {food.carb}g</span>
                                                                     {food.dietryFiber > 0 && <span>Fiber: {food.dietryFiber}g</span>}
                                                                     {food.saturatedFat > 0 && <span>Sat: {food.saturatedFat}g</span>}
+                                                                    {food.servingSize && <span className="text-gray-400">per {food.servingSize}g</span>}
                                                                 </div>
+                                                                {food.isComposite && (
+                                                                    <div className="text-xs text-gray-500 mt-1">
+                                                                        {(food.ingredients || []).map(ing => {
+                                                                            const ingFood = foodDatabase.find(f => f.id === ing.foodId);
+                                                                            return ingFood ? `${ingFood.name} (${ing.grams}g)` : null;
+                                                                        }).filter(Boolean).join(', ')}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                             <div className="flex gap-2 ml-4">
                                                                 <button
-                                                                    onClick={() => setEditingFood(food)}
+                                                                    onClick={() => startEditFood(food)}
                                                                     className="text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-colors"
                                                                 >
                                                                     <Edit2 />
