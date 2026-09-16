@@ -128,6 +128,14 @@
             </svg>
         );
 
+        const Target = () => (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <circle cx="12" cy="12" r="6"></circle>
+                <circle cx="12" cy="12" r="2"></circle>
+            </svg>
+        );
+
         // Computes the macro contribution of a single recipe ingredient, scaled from
         // the ingredient food's macros (defined per its servingSize, default 100g)
         // to the grams actually used.
@@ -165,6 +173,11 @@
             const [foodDatabase, setFoodDatabase] = useState([]);
             const [allSessions, setAllSessions] = useState([]);
             const [currentSessionId, setCurrentSessionId] = useState(null);
+            const [dietPlans, setDietPlans] = useState([]);
+            const [activePlanId, setActivePlanId] = useState(null);
+            const [showAddPlan, setShowAddPlan] = useState(false);
+            const [newPlanName, setNewPlanName] = useState('');
+            const [planItemDrafts, setPlanItemDrafts] = useState({});
             const [showAddFood, setShowAddFood] = useState(false);
             const [showAddEntry, setShowAddEntry] = useState(false);
             const [editingFood, setEditingFood] = useState(null);
@@ -223,6 +236,16 @@
                     } else {
                         createNewSession('First Session', true);
                     }
+
+                    const plansData = localStorage.getItem('diet-plans');
+                    if (plansData) {
+                        setDietPlans(JSON.parse(plansData));
+                    }
+
+                    const activePlanData = localStorage.getItem('active-plan-id');
+                    if (activePlanData) {
+                        setActivePlanId(activePlanData);
+                    }
                 } catch (error) {
                     console.log('No existing data, starting fresh');
                     const starterFoods = STARTER_FOODS.map((food, index) => ({
@@ -278,7 +301,25 @@
                 }
                 localStorage.removeItem('food-database');
                 localStorage.removeItem('tracking-sessions');
+                localStorage.removeItem('diet-plans');
+                localStorage.removeItem('active-plan-id');
                 window.location.reload();
+            };
+
+            const savePlans = (plans) => {
+                try {
+                    localStorage.setItem('diet-plans', JSON.stringify(plans));
+                } catch (error) {
+                    console.error('Error saving plans:', error);
+                }
+            };
+
+            const saveActivePlanId = (id) => {
+                if (id) {
+                    localStorage.setItem('active-plan-id', id);
+                } else {
+                    localStorage.removeItem('active-plan-id');
+                }
             };
 
             const getCurrentSession = () => {
@@ -306,7 +347,9 @@
             const exportData = () => {
                 const data = {
                     foodDatabase,
-                    sessions: allSessions
+                    sessions: allSessions,
+                    dietPlans,
+                    activePlanId
                 };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
@@ -352,6 +395,14 @@
                                 if (data.sessions.length > 0) {
                                     setCurrentSessionId(data.sessions[0].id);
                                 }
+                            }
+                            if (data.dietPlans) {
+                                setDietPlans(data.dietPlans);
+                                savePlans(data.dietPlans);
+                            }
+                            if (data.activePlanId !== undefined) {
+                                setActivePlanId(data.activePlanId);
+                                saveActivePlanId(data.activePlanId);
                             }
                             alert('Data imported successfully!');
                         } catch (error) {
@@ -554,6 +605,72 @@
                 saveDatabase(updatedDb);
             };
 
+            const createPlan = () => {
+                if (!newPlanName.trim()) return;
+
+                const plan = {
+                    id: Date.now().toString(),
+                    name: newPlanName.trim(),
+                    items: []
+                };
+
+                const updatedPlans = [...dietPlans, plan];
+                setDietPlans(updatedPlans);
+                savePlans(updatedPlans);
+                setNewPlanName('');
+                setShowAddPlan(false);
+            };
+
+            const deletePlan = (id) => {
+                const updatedPlans = dietPlans.filter(p => p.id !== id);
+                setDietPlans(updatedPlans);
+                savePlans(updatedPlans);
+
+                if (id === activePlanId) {
+                    setActivePlanId(null);
+                    saveActivePlanId(null);
+                }
+            };
+
+            const toggleActivePlan = (id) => {
+                const newActiveId = activePlanId === id ? null : id;
+                setActivePlanId(newActiveId);
+                saveActivePlanId(newActiveId);
+            };
+
+            const updatePlanItemDraft = (planId, field, value) => {
+                setPlanItemDrafts(prev => ({
+                    ...prev,
+                    [planId]: { ...(prev[planId] || { foodId: '', count: 1 }), [field]: value }
+                }));
+            };
+
+            const addPlanItem = (planId) => {
+                const draft = planItemDrafts[planId];
+                if (!draft?.foodId) return;
+
+                const item = {
+                    id: `plan-item-${Date.now()}-${Math.random()}`,
+                    foodId: draft.foodId,
+                    count: parseFloat(draft.count) || 1
+                };
+
+                const updatedPlans = dietPlans.map(p =>
+                    p.id === planId ? { ...p, items: [...p.items, item] } : p
+                );
+                setDietPlans(updatedPlans);
+                savePlans(updatedPlans);
+                setPlanItemDrafts(prev => ({ ...prev, [planId]: { foodId: '', count: 1 } }));
+            };
+
+            const removePlanItem = (planId, itemId) => {
+                const updatedPlans = dietPlans.map(p =>
+                    p.id === planId ? { ...p, items: p.items.filter(i => i.id !== itemId) } : p
+                );
+                setDietPlans(updatedPlans);
+                savePlans(updatedPlans);
+            };
+
             const addEntry = () => {
                 if (!newEntry.foodId) return;
 
@@ -707,6 +824,19 @@
                                     Database
                                 </span>
                             </button>
+                            <button
+                                onClick={() => setView('plans')}
+                                className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
+                                    view === 'plans'
+                                        ? 'bg-gray-900 text-white card-shadow-lg'
+                                        : 'bg-white text-gray-600 hover:bg-gray-50 card-shadow border border-gray-200'
+                                }`}
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <Target />
+                                    Plans
+                                </span>
+                            </button>
                         </div>
 
                         {view === 'tracker' && (
@@ -768,6 +898,23 @@
                                         </div>
                                     </div>
                                 )}
+
+                                {activePlanId && (() => {
+                                    const activePlan = dietPlans.find(p => p.id === activePlanId);
+                                    if (!activePlan) return null;
+                                    const planTotals = calculateTotals(activePlan.items);
+                                    return (
+                                        <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 mb-6 flex items-center justify-between flex-wrap gap-2">
+                                            <div>
+                                                <div className="text-xs font-bold text-green-700 uppercase tracking-wide">Following Plan</div>
+                                                <div className="text-lg font-bold text-gray-800">{activePlan.name}</div>
+                                            </div>
+                                            <div className="text-sm text-gray-600 text-right">
+                                                Target: {planTotals.calories.toFixed(0)} cal · {planTotals.protein.toFixed(0)}g protein · {planTotals.carb.toFixed(0)}g carbs · {planTotals.fat.toFixed(0)}g fat
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 <div className="glass rounded-3xl shadow-xl p-6 mb-6">
                                     <h2 className="text-2xl font-black text-gray-800 mb-6 flex items-center gap-2">
@@ -1373,6 +1520,176 @@
                                         </div>
                                     )}
                                 </div>
+                            </>
+                        )}
+
+                        {view === 'plans' && (
+                            <>
+                                <button
+                                    onClick={() => setShowAddPlan(true)}
+                                    className="w-full bg-gradient-to-r from-purple-600 to-violet-600 text-white py-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all mb-6 flex items-center justify-center gap-2"
+                                >
+                                    <Plus />
+                                    New Plan
+                                </button>
+
+                                {showAddPlan && (
+                                    <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                                        <h3 className="text-lg font-bold text-gray-800 mb-4">New Plan</h3>
+                                        <input
+                                            type="text"
+                                            placeholder="Plan Name (e.g. CUT, BULK)"
+                                            value={newPlanName}
+                                            onChange={(e) => setNewPlanName(e.target.value)}
+                                            className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none mb-4"
+                                        />
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={createPlan}
+                                                className="flex-1 bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <Check />
+                                                Save
+                                            </button>
+                                            <button
+                                                onClick={() => { setShowAddPlan(false); setNewPlanName(''); }}
+                                                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition-colors flex items-center justify-center gap-2"
+                                            >
+                                                <X />
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {dietPlans.length === 0 ? (
+                                    <div className="bg-white rounded-2xl shadow-lg p-6">
+                                        <p className="text-gray-500 text-center py-8">No plans yet. Create a plan like "CUT" or "BULK" to group the foods you want to follow.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {dietPlans.map(plan => {
+                                            const isActive = plan.id === activePlanId;
+                                            const planTotals = calculateTotals(plan.items);
+                                            const draft = planItemDrafts[plan.id] || { foodId: '', count: 1 };
+                                            return (
+                                                <div key={plan.id} className={`bg-white rounded-2xl shadow-lg p-6 border-2 ${isActive ? 'border-green-500' : 'border-transparent'}`}>
+                                                    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <h3 className="text-lg font-bold text-gray-800">{plan.name}</h3>
+                                                            {isActive && (
+                                                                <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded-full">
+                                                                    Following
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => toggleActivePlan(plan.id)}
+                                                                className={`px-3 py-2 rounded-lg font-semibold text-sm transition-colors ${
+                                                                    isActive
+                                                                        ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                                                        : 'bg-green-600 text-white hover:bg-green-700'
+                                                                }`}
+                                                            >
+                                                                {isActive ? 'Unfollow' : 'Follow Plan'}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => deletePlan(plan.id)}
+                                                                className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                                            >
+                                                                <Trash2 />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4 text-sm">
+                                                        <div className="bg-red-50 p-2 rounded-lg text-center">
+                                                            <div className="text-xs text-red-600">Cal</div>
+                                                            <div className="font-bold text-red-700">{planTotals.calories.toFixed(0)}</div>
+                                                        </div>
+                                                        <div className="bg-blue-50 p-2 rounded-lg text-center">
+                                                            <div className="text-xs text-blue-600">Protein</div>
+                                                            <div className="font-bold text-blue-700">{planTotals.protein.toFixed(1)}g</div>
+                                                        </div>
+                                                        <div className="bg-yellow-50 p-2 rounded-lg text-center">
+                                                            <div className="text-xs text-yellow-600">Fat</div>
+                                                            <div className="font-bold text-yellow-700">{planTotals.fat.toFixed(1)}g</div>
+                                                        </div>
+                                                        <div className="bg-green-50 p-2 rounded-lg text-center">
+                                                            <div className="text-xs text-green-600">Carbs</div>
+                                                            <div className="font-bold text-green-700">{planTotals.carb.toFixed(1)}g</div>
+                                                        </div>
+                                                        <div className="bg-purple-50 p-2 rounded-lg text-center">
+                                                            <div className="text-xs text-purple-600">Fiber</div>
+                                                            <div className="font-bold text-purple-700">{planTotals.dietryFiber.toFixed(1)}g</div>
+                                                        </div>
+                                                        <div className="bg-orange-50 p-2 rounded-lg text-center">
+                                                            <div className="text-xs text-orange-600">Sat Fat</div>
+                                                            <div className="font-bold text-orange-700">{planTotals.saturatedFat.toFixed(1)}g</div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-2 mb-4">
+                                                        {plan.items.length === 0 ? (
+                                                            <p className="text-gray-400 text-sm text-center py-3">No items yet. Add foods or recipes below.</p>
+                                                        ) : (
+                                                            plan.items.map(item => {
+                                                                const food = foodDatabase.find(f => f.id === item.foodId);
+                                                                if (!food) return null;
+                                                                return (
+                                                                    <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                                        <div>
+                                                                            <div className="font-semibold text-gray-800 text-sm">
+                                                                                {food.isComposite ? '🧩 ' : ''}{food.name}
+                                                                            </div>
+                                                                            <div className="text-xs text-gray-500">
+                                                                                {item.count}x serving • {(food.calories * item.count).toFixed(0)} cal
+                                                                            </div>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => removePlanItem(plan.id, item.id)}
+                                                                            className="text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                                                                        >
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex gap-2">
+                                                        <select
+                                                            value={draft.foodId}
+                                                            onChange={(e) => updatePlanItemDraft(plan.id, 'foodId', e.target.value)}
+                                                            className="flex-1 p-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
+                                                        >
+                                                            <option value="">Choose a food...</option>
+                                                            {foodDatabase.map(food => (
+                                                                <option key={food.id} value={food.id}>{food.isComposite ? '🧩 ' : ''}{food.name}</option>
+                                                            ))}
+                                                        </select>
+                                                        <input
+                                                            type="number"
+                                                            step="0.1"
+                                                            placeholder="Servings"
+                                                            value={draft.count}
+                                                            onChange={(e) => updatePlanItemDraft(plan.id, 'count', e.target.value)}
+                                                            className="w-24 p-2 border-2 border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm"
+                                                        />
+                                                        <button
+                                                            onClick={() => addPlanItem(plan.id)}
+                                                            className="bg-gray-900 text-white px-4 rounded-lg hover:bg-gray-800 transition-colors"
+                                                        >
+                                                            <Plus size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
                             </>
                         )}
                     </div>
