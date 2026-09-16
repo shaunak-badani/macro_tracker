@@ -34,7 +34,7 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
         // STARTER FOOD DATABASE - Edit this to change default foods for all users
         // Needs edits - I'm too tired right now.
@@ -112,14 +112,6 @@
             </svg>
         );
 
-        const RefreshCw = ({ size = 20 }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="23 4 23 10 17 10"></polyline>
-                <polyline points="1 20 1 14 7 14"></polyline>
-                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-            </svg>
-        );
-
         const Download = () => (
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -155,6 +147,19 @@
             };
         };
 
+        // Local calendar-day key (not UTC), used to key sessions by day: "2026-09-15"
+        const getDateKey = (d = new Date()) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const formatDateKey = (dateKey) => {
+            const d = new Date(`${dateKey}T00:00:00`);
+            return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        };
+
         const sumIngredientMacros = (ingredients, foodDatabase) => {
             const totals = { calories: 0, protein: 0, fat: 0, carb: 0, dietryFiber: 0, saturatedFat: 0 };
             (ingredients || []).forEach(ing => {
@@ -183,8 +188,7 @@
             const [editingFood, setEditingFood] = useState(null);
             const [view, setView] = useState('tracker');
             const [loading, setLoading] = useState(true);
-            const [showNewSessionModal, setShowNewSessionModal] = useState(false);
-            const [newSessionName, setNewSessionName] = useState('');
+            const todayKeyRef = useRef(getDateKey());
 
             const [newFood, setNewFood] = useState({
                 name: '',
@@ -209,6 +213,49 @@
                 loadData();
             }, []);
 
+            // Checks once a minute whether the calendar day has rolled over while the
+            // app stayed open, so a session for the new day gets created automatically
+            // and the view follows it (unless the user had switched to some other day).
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    const newTodayKey = getDateKey();
+                    if (newTodayKey === todayKeyRef.current) return;
+                    const previousTodayKey = todayKeyRef.current;
+                    todayKeyRef.current = newTodayKey;
+
+                    setAllSessions(prev => {
+                        if (prev.some(s => s.id === newTodayKey)) return prev;
+                        const updated = [{ id: newTodayKey, date: newTodayKey, log: [] }, ...prev];
+                        saveSessions(updated);
+                        return updated;
+                    });
+                    setCurrentSessionId(prevId => prevId === previousTodayKey ? newTodayKey : prevId);
+                }, 60000);
+                return () => clearInterval(interval);
+            }, []);
+
+            // Merges legacy name/timestamp sessions into date-keyed ones (same-day logs
+            // combined) and makes sure today's session exists.
+            const normalizeSessions = (sessions) => {
+                const byDateKey = {};
+                sessions.forEach(s => {
+                    const key = /^\d{4}-\d{2}-\d{2}$/.test(s.date || '') ? s.date : getDateKey(new Date(s.date || Date.now()));
+                    if (byDateKey[key]) {
+                        byDateKey[key].log = [...byDateKey[key].log, ...(s.log || [])];
+                    } else {
+                        byDateKey[key] = { id: key, date: key, log: s.log || [] };
+                    }
+                });
+
+                const todayKey = getDateKey();
+                if (!byDateKey[todayKey]) {
+                    byDateKey[todayKey] = { id: todayKey, date: todayKey, log: [] };
+                }
+
+                const sorted = Object.values(byDateKey).sort((a, b) => b.date.localeCompare(a.date));
+                return { sessions: sorted, todayKey };
+            };
+
             const loadData = () => {
                 setLoading(true);
                 try {
@@ -226,16 +273,12 @@
                     }
 
                     const sessionsData = localStorage.getItem('tracking-sessions');
-                    if (sessionsData) {
-                        const sessions = JSON.parse(sessionsData);
-                        setAllSessions(sessions);
-                        
-                        if (sessions.length > 0) {
-                            setCurrentSessionId(sessions[0].id);
-                        }
-                    } else {
-                        createNewSession('First Session', true);
-                    }
+                    const rawSessions = sessionsData ? JSON.parse(sessionsData) : [];
+                    const { sessions, todayKey } = normalizeSessions(rawSessions);
+                    setAllSessions(sessions);
+                    saveSessions(sessions);
+                    setCurrentSessionId(todayKey);
+                    todayKeyRef.current = todayKey;
 
                     const plansData = localStorage.getItem('diet-plans');
                     if (plansData) {
@@ -254,29 +297,15 @@
                     }));
                     setFoodDatabase(starterFoods);
                     saveDatabase(starterFoods);
-                    createNewSession('First Session', true);
+
+                    const todayKey = getDateKey();
+                    const freshSession = { id: todayKey, date: todayKey, log: [] };
+                    setAllSessions([freshSession]);
+                    saveSessions([freshSession]);
+                    setCurrentSessionId(todayKey);
+                    todayKeyRef.current = todayKey;
                 }
                 setLoading(false);
-            };
-
-            const createNewSession = (name = '', skipModal = false) => {
-                const sessionName = name || newSessionName || `Session ${new Date().toLocaleString()}`;
-                const newSession = {
-                    id: Date.now().toString(),
-                    name: sessionName,
-                    date: new Date().toISOString(),
-                    log: []
-                };
-
-                const updatedSessions = [newSession, ...allSessions];
-                setAllSessions(updatedSessions);
-                setCurrentSessionId(newSession.id);
-                saveSessions(updatedSessions);
-                
-                if (!skipModal) {
-                    setShowNewSessionModal(false);
-                    setNewSessionName('');
-                }
             };
 
             const saveSessions = (sessions) => {
@@ -859,62 +888,19 @@
                         {view === 'tracker' && (
                             <>
                                 <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex-1">
-                                            <label className="block text-sm font-semibold text-gray-700 mb-2">Current Session</label>
-                                            <select
-                                                value={currentSessionId || ''}
-                                                onChange={(e) => setCurrentSessionId(e.target.value)}
-                                                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
-                                            >
-                                                {allSessions.map(session => (
-                                                    <option key={session.id} value={session.id}>
-                                                        {session.name} - {new Date(session.date).toLocaleString()}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <button
-                                            onClick={() => setShowNewSessionModal(true)}
-                                            className="ml-4 bg-green-600 text-white p-3 rounded-xl hover:bg-green-700 transition-colors"
-                                            title="Start New Session"
-                                        >
-                                            <RefreshCw />
-                                        </button>
-                                    </div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-2">Day</label>
+                                    <select
+                                        value={currentSessionId || ''}
+                                        onChange={(e) => setCurrentSessionId(e.target.value)}
+                                        className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none"
+                                    >
+                                        {allSessions.map(session => (
+                                            <option key={session.id} value={session.id}>
+                                                {formatDateKey(session.date)}
+                                            </option>
+                                        ))}
+                                    </select>
                                 </div>
-
-                                {showNewSessionModal && (
-                                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-                                        <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-md w-full">
-                                            <h3 className="text-xl font-bold text-gray-800 mb-4">Start New Session</h3>
-                                            <input
-                                                type="text"
-                                                placeholder="Session name (optional)"
-                                                value={newSessionName}
-                                                onChange={(e) => setNewSessionName(e.target.value)}
-                                                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none mb-4"
-                                            />
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => createNewSession()}
-                                                    className="flex-1 bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700 transition-colors"
-                                                >
-                                                    Create
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        setShowNewSessionModal(false);
-                                                        setNewSessionName('');
-                                                    }}
-                                                    className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-300 transition-colors"
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                )}
 
                                 {activePlanId && (() => {
                                     const activePlan = dietPlans.find(p => p.id === activePlanId);
@@ -1075,8 +1061,7 @@
                                                 <div key={session.id} className="border-2 border-gray-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
                                                     <div className="flex items-start justify-between mb-3">
                                                         <div>
-                                                            <h3 className="font-bold text-gray-800">{session.name}</h3>
-                                                            <p className="text-sm text-gray-600">{new Date(session.date).toLocaleString()}</p>
+                                                            <h3 className="font-bold text-gray-800">{formatDateKey(session.date)}</h3>
                                                         </div>
                                                         <div className="flex gap-2">
                                                             <button
@@ -1109,7 +1094,7 @@
                                                                     const url = URL.createObjectURL(blob);
                                                                     const a = document.createElement('a');
                                                                     a.href = url;
-                                                                    a.download = `${session.name.replace(/\s+/g, '-')}-${new Date(session.date).toISOString().split('T')[0]}.csv`;
+                                                                    a.download = `macro-log-${session.date}.csv`;
                                                                     a.click();
                                                                     URL.revokeObjectURL(url);
                                                                 }}
