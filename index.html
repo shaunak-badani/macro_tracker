@@ -785,9 +785,10 @@
                             <button
                                 onClick={handleResetToDefaults}
                                 title="Delete all saved data and reload defaults"
-                                className="absolute top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm"
+                                className="absolute top-4 right-4 bg-red-600 text-white p-2 sm:px-4 sm:py-2 rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm"
                             >
-                                🗑️ Reset to Defaults
+                                <span className="sm:hidden inline-flex"><Trash2 size={18} /></span>
+                                <span className="hidden sm:inline">🗑️ Reset to Defaults</span>
                             </button>
                             <h1 className="text-3xl font-bold text-gray-900 mb-1">
                                 Macro Tracker
