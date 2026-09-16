@@ -272,6 +272,15 @@
                 }
             };
 
+            const handleResetToDefaults = () => {
+                if (!window.confirm('This will permanently delete your food database and tracking sessions, then reload the app with default data. Continue?')) {
+                    return;
+                }
+                localStorage.removeItem('food-database');
+                localStorage.removeItem('tracking-sessions');
+                window.location.reload();
+            };
+
             const getCurrentSession = () => {
                 return allSessions.find(s => s.id === currentSessionId);
             };
@@ -609,7 +618,14 @@
                 <div className="min-h-screen p-4 pb-20">
                     <div className="max-w-5xl mx-auto animate-in">
                         {/* Clean professional header */}
-                        <div className="bg-white rounded-xl card-shadow-lg p-8 mb-6 border border-gray-100">
+                        <div className="bg-white rounded-xl card-shadow-lg p-8 mb-6 border border-gray-100 relative">
+                            <button
+                                onClick={handleResetToDefaults}
+                                title="Delete all saved data and reload defaults"
+                                className="absolute top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm"
+                            >
+                                🗑️ Reset to Defaults
+                            </button>
                             <h1 className="text-3xl font-bold text-gray-900 mb-1">
                                 Macro Tracker
                             </h1>
