@@ -183,6 +183,20 @@
             return totals;
         };
 
+        // Re-derives macros for composite (recipe) foods from their current ingredients,
+        // so a change to an ingredient's macros propagates to recipes built from it
+        // (and transitively to plans, which read food macros live).
+        const recalcCompositeFoods = (db) => {
+            let result = db;
+            for (let pass = 0; pass < 5; pass++) {
+                result = result.map(food => {
+                    if (!food.isComposite) return food;
+                    return { ...food, ...sumIngredientMacros(food.ingredients, result) };
+                });
+            }
+            return result;
+        };
+
         function MacroTracker() {
             const [foodDatabase, setFoodDatabase] = useState([]);
             const [allSessions, setAllSessions] = useState([]);
@@ -367,10 +381,10 @@
                 const newStarters = STARTER_FOODS
                     .filter(s => !existingByName.has(s.name))
                     .map((food, index) => ({ ...food, id: `starter-${Date.now()}-${index}` }));
-                const finalDb = [...updatedDb, ...newStarters];
+                const finalDb = recalcCompositeFoods([...updatedDb, ...newStarters]);
                 setFoodDatabase(finalDb);
                 saveDatabase(finalDb);
-                alert(`Updated ${updatedCount} default food(s)${newStarters.length ? `, added ${newStarters.length} new default food(s)` : ''}.`);
+                alert(`Updated ${updatedCount} default food(s)${newStarters.length ? `, added ${newStarters.length} new default food(s)` : ''}. Recipes and plans using them now reflect the updated macros.`);
             };
 
             const savePlans = (plans) => {
@@ -820,22 +834,20 @@
                     <div className="max-w-5xl mx-auto animate-in">
                         {/* Clean professional header */}
                         <div className="bg-white rounded-xl card-shadow-lg p-8 mb-6 border border-gray-100 relative">
-                            <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
-                                <button
-                                    onClick={handleResetToDefaults}
-                                    title="Delete all saved data and reload defaults"
-                                    className="bg-red-600 text-white p-2 sm:px-4 sm:py-2 rounded-lg font-semibold hover:bg-red-700 transition-colors text-sm"
-                                >
-                                    <span className="sm:hidden inline-flex"><Trash2 size={18} /></span>
-                                    <span className="hidden sm:inline">🗑️ Reset to Defaults</span>
-                                </button>
+                            <div className="absolute top-4 right-4 flex gap-1">
                                 <button
                                     onClick={handleReloadDefaultMacros}
-                                    title="Update macro values for default foods from the latest starter list, without touching your other foods or history"
-                                    className="bg-blue-600 text-white p-2 sm:px-4 sm:py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                                    title="Reload default macros: updates macro values for default foods from the latest starter list, without touching your other foods or history"
+                                    className="text-gray-400 p-2 rounded-lg hover:bg-gray-100 hover:text-gray-600 transition-colors"
                                 >
-                                    <span className="sm:hidden inline-flex"><RefreshCw size={18} /></span>
-                                    <span className="hidden sm:inline">🔄 Reload Default Macros</span>
+                                    <RefreshCw size={16} />
+                                </button>
+                                <button
+                                    onClick={handleResetToDefaults}
+                                    title="Reset to defaults: delete all saved data and reload defaults"
+                                    className="text-gray-400 p-2 rounded-lg hover:bg-gray-100 hover:text-gray-600 transition-colors"
+                                >
+                                    <Trash2 size={16} />
                                 </button>
                             </div>
                             <h1 className="text-3xl font-bold text-gray-900 mb-1">
